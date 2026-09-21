@@ -1,0 +1,16 @@
+[project]
+name = "skills-to-income"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi>=0.141.1",
+    "openai-agents>=0.22.3",
+    "python-dotenv>=1.2.3",
+    "uvicorn[standard]>=0.53.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+]

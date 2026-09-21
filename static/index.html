@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Skills-to-Income Planner</title>
+  <style>
+    :root {
+      --bg: #f6f7f9; --card: #ffffff; --text: #1c2430; --muted: #5b6675;
+      --line: #dfe3e8; --accent: #2457d6; --accent-text: #ffffff;
+      --warn-bg: #fff6e0; --warn-line: #e8c56a; --err-bg: #fdecec; --err-line: #e59a9a;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #12151a; --card: #1b2028; --text: #e7eaee; --muted: #9aa5b3;
+        --line: #2b323d; --accent: #6d97ff; --accent-text: #0d1220;
+        --warn-bg: #2b2411; --warn-line: #6e5a1f; --err-bg: #2f1a1a; --err-line: #7a3b3b;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 24px 16px 64px; background: var(--bg); color: var(--text);
+      font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    main { max-width: 760px; margin: 0 auto; }
+    h1 { font-size: 1.6rem; margin: 0 0 4px; }
+    h2 { font-size: 1.1rem; margin: 0 0 12px; }
+    h3 { font-size: 1rem; margin: 0 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 20px; }
+    .card {
+      background: var(--card); border: 1px solid var(--line);
+      border-radius: 10px; padding: 18px; margin-bottom: 16px;
+    }
+    label { display: block; font-weight: 600; margin: 14px 0 4px; }
+    label:first-of-type { margin-top: 0; }
+    .hint { font-weight: 400; color: var(--muted); font-size: 0.9rem; }
+    input, textarea {
+      width: 100%; padding: 9px 10px; font: inherit; color: var(--text);
+      background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
+    }
+    textarea { min-height: 70px; resize: vertical; }
+    input:focus, textarea:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+    button {
+      margin-top: 18px; padding: 10px 18px; font: inherit; font-weight: 600;
+      color: var(--accent-text); background: var(--accent); border: 0;
+      border-radius: 6px; cursor: pointer;
+    }
+    button:disabled { opacity: 0.6; cursor: wait; }
+    .privacy { color: var(--muted); font-size: 0.85rem; margin: 12px 0 0; }
+    .notice { border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; border: 1px solid; }
+    .notice.warn { background: var(--warn-bg); border-color: var(--warn-line); }
+    .notice.error { background: var(--err-bg); border-color: var(--err-line); }
+    .item { padding: 12px 0; border-top: 1px solid var(--line); }
+    .item:first-of-type { border-top: 0; padding-top: 0; }
+    .item p { margin: 2px 0; }
+    .k { color: var(--muted); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    .tag {
+      display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 1px 8px;
+      border-radius: 999px; border: 1px solid var(--line); color: var(--muted); margin-left: 6px;
+      vertical-align: middle;
+    }
+    ol, ul { margin: 0; padding-left: 22px; }
+    li { margin: 4px 0; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Skills-to-Income Planner</h1>
+  <p class="sub">Tell us what you can do and how much time you have. You get realistic ideas to test, not promises.</p>
+
+  <form id="form" class="card">
+    <label for="skills">Your skills <span class="hint">(what can you actually do?)</span></label>
+    <textarea id="skills" name="skills" required minlength="2" maxlength="500"
+      placeholder="e.g. Python, Excel, Arabic and English, basic video editing"></textarea>
+
+    <label for="experience">Your experience</label>
+    <textarea id="experience" name="experience" required minlength="2" maxlength="500"
+      placeholder="e.g. 2nd-year CS student, two class projects, no paid work yet"></textarea>
+
+    <label for="hours">Hours per week you can spend</label>
+    <input id="hours" name="hours_per_week" type="number" min="1" max="80" value="5" required>
+
+    <label for="goal">Your goal</label>
+    <input id="goal" name="goal" type="text" required minlength="2" maxlength="300"
+      placeholder="e.g. earn some pocket money within 3 months">
+
+    <label for="constraints">Constraints <span class="hint">(optional: budget, location, exams, tools...)</span></label>
+    <textarea id="constraints" name="constraints" maxlength="500"
+      placeholder="e.g. no budget, remote work only, exams in December"></textarea>
+
+    <button id="submit" type="submit">Build my plan</button>
+    <p class="privacy">What you type is sent to Groq, an AI service, to generate the plan. Nothing is saved by this app.</p>
+  </form>
+
+  <div id="status" hidden></div>
+  <div id="result" hidden></div>
+</main>
+
+<script>
+  const form = document.getElementById("form");
+  const submitBtn = document.getElementById("submit");
+  const statusEl = document.getElementById("status");
+  const resultEl = document.getElementById("result");
+
+  // Model output is untrusted text, so every value goes in through
+  // textContent (never innerHTML) to avoid injecting markup.
+  function el(tag, text, className) {
+    const node = document.createElement(tag);
+    if (text !== undefined) node.textContent = text;
+    if (className) node.className = className;
+    return node;
+  }
+
+  function field(label, value) {
+    const p = el("p");
+    p.append(el("span", label + ": ", "k"), document.createTextNode(value));
+    return p;
+  }
+
+  function card(title, tag) {
+    const c = el("section", undefined, "card");
+    const h = el("h2", title);
+    if (tag) h.append(el("span", tag, "tag"));
+    c.append(h);
+    return c;
+  }
+
+  function list(items, ordered) {
+    const l = document.createElement(ordered ? "ol" : "ul");
+    items.forEach((t) => l.append(el("li", t)));
+    return l;
+  }
+
+  function renderPlan(plan) {
+    resultEl.replaceChildren();
+
+    resultEl.append(
+      el("div", "No income is guaranteed. Everything below is a suggestion to test, based on what you told us.", "notice warn")
+    );
+
+    const summary = card("Summary");
+    summary.append(el("p", plan.summary));
+    resultEl.append(summary);
+
+    const opps = card("Possible opportunities", "possible");
+    plan.opportunities.forEach((o) => {
+      const d = el("div", undefined, "item");
+      d.append(el("h3", o.title), field("Who might pay", o.who_might_pay),
+        field("What to offer", o.what_to_offer), field("Why it fits you", o.why_it_fits));
+      opps.append(d);
+    });
+    resultEl.append(opps);
+
+    const hyps = card("Hypotheses to test", "not proven");
+    plan.hypotheses_to_test.forEach((h) => {
+      const d = el("div", undefined, "item");
+      d.append(el("h3", h.statement), field("Cheap way to test", h.cheap_test));
+      hyps.append(d);
+    });
+    resultEl.append(hyps);
+
+    const gaps = card("Skill gaps");
+    plan.skill_gaps.forEach((g) => {
+      const d = el("div", undefined, "item");
+      d.append(el("h3", g.skill), field("Why it matters", g.why_it_matters),
+        field("How to close it", g.how_to_close_it));
+      gaps.append(d);
+    });
+    resultEl.append(gaps);
+
+    const actions = card("Next actions", "top pick: " + plan.top_opportunity);
+    actions.append(list(plan.next_actions.map((a) => a.step + " (" + a.time_needed + ")"), true));
+    resultEl.append(actions);
+
+    const limits = card("Assumptions and uncertainty");
+    limits.append(el("h3", "What we assumed"), list(plan.assumptions),
+      el("h3", "What could make this wrong"), list(plan.uncertainties));
+    resultEl.append(limits);
+
+    resultEl.hidden = false;
+  }
+
+  function showStatus(message, kind) {
+    statusEl.className = "notice " + kind;
+    statusEl.textContent = message;
+    statusEl.hidden = false;
+  }
+
+  // FastAPI sends {detail: "text"} for our errors and {detail: [...]} for
+  // input validation errors (HTTP 422).
+  function errorMessage(status, body) {
+    if (typeof body.detail === "string") return body.detail;
+    if (status === 422) return "Please check the form: some answers are missing or too long.";
+    return "Something went wrong (HTTP " + status + ").";
+  }
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const data = Object.fromEntries(new FormData(form));
+    data.hours_per_week = Number(data.hours_per_week);
+    if (!data.constraints.trim()) data.constraints = "none";
+
+    submitBtn.disabled = true;
+    resultEl.hidden = true;
+    showStatus("Building your plan. This can take 10 to 30 seconds...", "warn");
+
+    try {
+      const response = await fetch("/api/plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        showStatus(errorMessage(response.status, body), "error");
+        return;
+      }
+      statusEl.hidden = true;
+      renderPlan(body);
+      resultEl.scrollIntoView({ behavior: "smooth" });
+    } catch (err) {
+      showStatus("Could not reach the server. Is it still running?", "error");
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

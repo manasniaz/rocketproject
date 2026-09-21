@@ -1,0 +1,9 @@
+# Secrets: never commit these
+.env
+
+# Python / uv
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
