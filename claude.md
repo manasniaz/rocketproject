@@ -325,3 +325,50 @@ DO NOT make major architectural decisions yet.
 DO NOT add a large number of features.
 
 We will design the product together first, then implement it step by step.
+
+---
+
+# CODEBASE REFERENCE (current state)
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+The sections above describe how to collaborate. This section describes what now exists. Where they conflict, this section wins: the product design phase is finished.
+
+## Scope (decided with the user)
+
+A local class project for the **OpenAI Agents SDK**, run on localhost and shown in class. Built in one stage. Target user: students and early-career people. No deployment, accounts, database, saved plans, analytics, scraping or multi-agent orchestration. Do not add these without asking. No project name has been chosen.
+
+## Commands
+
+Uses `uv` (not pip). Python 3.14. The venv lives in `.venv/`.
+
+```
+uv sync                                  # install dependencies
+uv run uvicorn app:app --reload          # run at http://127.0.0.1:8000
+uv run pytest                            # all tests (AI mocked, no key needed)
+uv run pytest test_app.py::test_rate_limit_gives_429_message   # one test
+uv run --with ruff ruff check .          # lint (ruff is not a project dependency)
+uv run --with ruff ruff format .         # format
+```
+
+Config is in `.env` (git-ignored; template in `.env.example`): `GROQ_API_KEY=...` is required, and `GROQ_MODEL` is an optional override (default `openai/gpt-oss-120b`).
+
+## Architecture
+
+Request flow: `static/index.html` form -> `POST /api/plan` in `app.py` -> `generate_plan()` in `agent.py` -> Groq -> JSON validated into the `Plan` Pydantic model -> page renders it.
+
+- `agent.py` holds all the AI logic. `app.py` is a thin FastAPI layer that validates input (`StudentProfile`, which has length and range limits) and turns `PlanError` into an `HTTPException`. Nothing is stored or logged.
+- **Groq is used through the Agents SDK by pointing `AsyncOpenAI` at `https://api.groq.com/openai/v1`** and wrapping it in `OpenAIChatCompletionsModel`. `set_tracing_disabled(True)` is required, or the SDK tries to upload traces to OpenAI.
+- **Do not switch the agent to `output_type=Plan`.** The SDK then requests a strict JSON schema and Groq rejects it with HTTP 400 `json_validate_failed`, on both `gpt-oss` models. Instead the agent uses Groq's JSON mode (`response_format: json_object` via `ModelSettings.extra_args`), the schema is appended to the instructions, and the reply is validated with `Plan.model_validate_json`. `generate_plan` retries once on invalid JSON, and `_run_agent` maps that same Groq 400 to an empty string so it takes the retry path.
+- `_run_agent` maps `openai.*` errors and `AgentsException` to `PlanError(message, status_code)`, so the page shows a readable message. `qwen/qwen3.8-27b` was tried and rejected: its output-token cap is too low for a full plan.
+- The prompt (`INSTRUCTIONS` in `agent.py`) carries the product's quality bar: specific to the person, no guaranteed income, no invented books, courses, URLs or prices, and user text treated as data. Keep it aligned with the QUALITY BAR section above. The "no income is guaranteed" notice is fixed in `index.html`, not model-generated.
+- `index.html` builds the results with `textContent`, never `innerHTML`, because model output is untrusted. Adding a field to `Plan` means updating the model, `renderPlan()` in the page, and the test fixture `VALID_PLAN`.
+
+## Testing notes
+
+Tests monkeypatch `app_module.generate_plan` and `agent._run_agent` / `agent.Runner.run`, so call these through the module attribute rather than a `from ... import` alias. Real-model behavior (plan quality, the Groq JSON quirk) is not covered by tests and has to be checked by running the app.
+
+## Environment gotchas
+
+- The shell is PowerShell 5.1. It decodes the API's UTF-8 JSON as Latin-1, so accents look garbled in `Invoke-RestMethod` output. This is not an app bug, and browsers render it correctly.
+- Groq's free tier is rate-limited (roughly 30 requests per minute and 8,000 tokens per minute at last check). Keep prompts and outputs small.
